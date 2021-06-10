@@ -6,109 +6,158 @@ Created on Thu Jun 10 14:56:50 2021
 
 import torch
 import torch.nn as nn
+from LSTM import LSTM
 
-class LSTM(nn.Module):
-    def __init__(self, input_size, hidden_size, num_layers=1, bias=True, cell=nn.LSTMCell, sequence_channel=1):
-        '''
-        input_size : The number of expected features in the input
-        hidden_size : The number of features in the hidden state h
-        num_layers : Number of recurrent layers. E.g., setting num_layers=2 would mean stacking two LSTMs together to form a stacked LSTM, with the second LSTM taking in outputs of the first LSTM and computing the final results. Default: 1
-        bias : If False, then the layer does not use bias weights b_ih and b_hh. Default: True
-        cell : nn.Module, your reccurent body
-        sequence_last : Sequence length should be in the corresponding dimension of x
-        '''
+class GateActivation(nn.Module):
+    def __init__(self, dim):
+        super().__init__()
+        self.gate = nn.Sequential(nn.Conv1d(dim, dim, 1),
+                                  nn.Sigmoid())
+        self.value = nn.Sequential(nn.Conv1d(dim, dim, 1),
+                                   nn.Tanh())
+    def forward(self, x):
+        return self.gate(x)*self.value(x)
+
+class simple_network(nn.Module):
+    def __init__(self, in_, hidden_, out_):
+        super().__init__()
+        self.net = nn.Sequential(
+                                 nn.Conv1d(in_,hidden_,1),
+                                 nn.LeakyReLU(),
+                                 GateActivation(hidden_),
+                                 nn.Conv1d(hidden_, 2*out_, 1, bias=False)
+                                 )
+    def forward(self, x):
+        mu, log_sigma = torch.chunk(self.net(x),2,1)
+        return torch.distributions.Normal(mu, torch.exp(log_sigma))
+
+class layer_block(nn.Module):
+    def __init__(self, backbone, PB, PT, QS):
+        super().__init__()
+        self.backbone_rnn = backbone
+        self.PB = PB
+        self.PT = PT
+        self.QS = QS
+
+    def upward_pass(self, x, state=None):
+        # LSTM
+        x_out, state_out = self.backbone_rnn(x, state)
+        return x_out, state_out
+    
+    def downward_pass(self, b, zt1_l_plus_n=[], zt2_l_plus_n=[]):
+        if(self.training):
+            PBt2_inp = torch.cat([b[...,1:]]+zt2_l_plus_n,1) #[B, C, T-1]
+            P_PBt2 = self.PB(PBt2_inp)
+            z_PBt2 = P_PBt2.rsample()
+            
+            QS_inp = torch.cat([b[...,1:], b[...,:-1], z_PBt2]+zt1_l_plus_n,1) #[B, C, T-1]
+            PBt1_inp = torch.cat([b[...,:-1]]+zt1_l_plus_n,1) #[B, C, T-1]
+            
+            P_QSt1 = self.QS(QS_inp)
+            z_QSt1 = P_QSt1.rsample()
+            
+            P_PBt1 = self.PB(PBt1_inp)
+            loss_PB = torch.mean(torch.distributions.kl_divergence(P_QSt1, P_PBt1))
+            
+            PTt1_inp = torch.cat([z_QSt1]+zt2_l_plus_n,1) #[B, C, T-1]
+            P_PTt1 = self.PT(PTt1_inp)
+            
+            loss_PT = torch.mean(P_PBt2.log_prob(z_PBt2) - P_PTt1.log_prob(z_PBt2))
+            
+            return zt1_l_plus_n+[z_QSt1], zt2_l_plus_n+[z_PBt2], loss_PB + loss_PT
+        
+        else:
+            PBt1_inp = torch.cat([b]+zt1_l_plus_n,1)
+            P_PBt1 = self.PB(PBt1_inp)
+            z_PBt1 = P_PBt1.sample()
+            
+            PTt1_inp = torch.cat([z_PBt1]+zt2_l_plus_n,1) #[B, C, T-1]
+            P_PTt1 = self.PT(PTt1_inp)
+            z_PTt1 = P_PTt1.sample() #zt2 predicted by PT
+            
+            return zt1_l_plus_n+[z_PBt1], zt2_l_plus_n+[z_PTt1], torch.zeros(1).to(z_PTt1.device)
+
+class tdvae(nn.Module):
+    def __init__(self, 
+                 input_dim,
+                 belief_state_dim, 
+                 MLP_hidden_dim,
+                 distribution_dim,
+                 num_layer_block=1,
+                 backbone_stack_layer=1
+                 ):
         super().__init__()
         
-        module_list = []
-        in_ = input_size
-        out_ = hidden_size
+        ind = input_dim
+        Blocks = []
         
-        for _ in range(num_layers):
-            module_list += [cell(in_, out_)]
-            in_ = out_
-        
-        self.net = nn.ModuleList(module_list)
-        self.sequence_channel = sequence_channel
-    
-    def step(self, x, state=None):
-        # x: [Batch, Channel]
-        # state: either None or tuple of tensors (h, c) with shape [LayerNum, Batch, hidden]
-        
-        if(state is None):
-            state = [None for _ in range(len(self.net))]
-        else:
-            Hs, Cs = torch.unbind(state[0],0), torch.unbind(state[1],0)
-            state = [(h_, c_) for h_, c_ in zip(Hs, Cs)]
-        
-        h_out = []
-        c_out = []
-        
-        #for every layers of stack LSTM
-        
-        h = x
-        
-        for fn_, s_ in zip(self.net, state):
-            h, c = fn_(h, s_)
-            h_out += [h]
-            c_out += [c]
-        
-        step_new_state = (torch.stack(h_out,0),
-                          torch.stack(c_out,0))
-        step_out = h_out[-1]
-        
-        return step_out, step_new_state
-    
-    def forward(self, x, state=None, return_full_states=False):
-        # x: [Batch, SequenceLen, Channel]
-        # state: either None or tuple of tensors (h, c) with shape [LayerNum, Batch, hidden]
-        
-        x_1_to_T = torch.unbind(x, self.sequence_channel)
-        
-        out_t = []
-        state_t = []
-        
-        for xt in x_1_to_T:
-            out, state = self.step(xt, state)
-            out_t += [out]
-            state_t += [state]
-        
-        ret_out = torch.stack(out_t, self.sequence_channel)
-        
-        if(return_full_states == True):
-            ret_state = (torch.stack([S[0] for S in state_t], self.sequence_channel+1), 
-                         torch.stack([S[1] for S in state_t], self.sequence_channel+1))
-        else:
-            ret_state = state_t[-1]
+        for layer_count in range(num_layer_block):
             
-        return ret_out, ret_state
+            layer_backbone = LSTM(ind, belief_state_dim, 
+                                  backbone_stack_layer, 
+                                  sequence_channel=-1)
+            
+            # input: b1, all upper zPBt1
+            layer_PBnet = simple_network(belief_state_dim + distribution_dim*(num_layer_block-1-layer_count), 
+                                         MLP_hidden_dim,
+                                         distribution_dim)
+            
+            # input: zt1, all upper PTzt1
+            layer_PTnet = simple_network(distribution_dim + distribution_dim*(num_layer_block-1-layer_count), 
+                                         MLP_hidden_dim, 
+                                         distribution_dim)
+            
+            # input: b1, b2, PBz2, all upper QSzt1
+            layer_QSnet = simple_network(belief_state_dim*2 + distribution_dim + distribution_dim*(num_layer_block-1-layer_count), 
+                                         MLP_hidden_dim, 
+                                         distribution_dim)
+        
+            Blocks = [layer_block(layer_backbone, 
+                                   layer_PBnet,
+                                   layer_PTnet,
+                                   layer_QSnet)] + Blocks
+            
+            ind = belief_state_dim
+            
+        self.blocks = nn.ModuleList(Blocks)
+        
+    def reccursive_for_sampling(self, b, pass_block, state=None):
+        # correctness check.
+        if(state is not None):
+            assert len(state) == len(pass_block), "State for all the layer blocks are required if it's not None."
+        
+        # check if it's the end of reccursive.
+        if(len(pass_block)==0):
+            return [], [], [], []
+        
+        # upward pass for from the belief states.
+        b_out, state_out = pass_block[-1].upward_pass(b, None if state is None else state[-1])
+        
+        # reccursive
+        ret_zt1_l_plus_n, ret_zt2_l_plus_n, ret_state, ret_loss = self.reccursive_for_sampling(b_out, pass_block[:-1], None if state is None else state[:-1])
+        
+        # start to downward sampling
+        zt1_l_plus_n, zt2_l_plus_n, vae_loss = pass_block[-1].downward_pass(b_out, ret_zt1_l_plus_n, ret_zt2_l_plus_n)
+        
+        return zt1_l_plus_n, zt2_l_plus_n, ret_state + [state_out], ret_loss + [vae_loss]
     
-    
-    
+    def forward(self, x, state=None):
+        #x: sequence with shape of [B,C,S]
+        #return value: list of zPBt1, zPTt1, the final state, loss
+        #NOTICE: tdvae has different performance under model.train() and model.eval().
+        #Please check the paper for more detial.
+        return self.reccursive_for_sampling(x, self.blocks, state)
 
 '''
-#property check
-#1.The module should be able to work with second-order gradient
+#Test reccursive#
+TD = tdvae(input_dim=37,
+         belief_state_dim=64, 
+         MLP_hidden_dim=64,
+         distribution_dim=16,
+         num_layer_block=16,
+         backbone_stack_layer=1)
 
-a = torch.autograd.Variable(torch.ones([1,3,37]).cuda(), requires_grad=True)
-f = LSTM(37,64,4).cuda()
-lstm_out, lstm_state = f(a)
-grads_val = torch.autograd.grad(outputs=lstm_out, inputs=a,
-                                grad_outputs=torch.ones_like(lstm_out),
-                                create_graph=True, retain_graph=True, only_inputs=True,allow_unused=True)[0]
-
-torch.mean(grads_val).backward()
-
-#2.The output should be the same as that of nn.LSTM
-
-f_torch = nn.LSTM(37, 64, 4, batch_first=True).cuda()
-for param_cur, param_best in zip(f.parameters(), f_torch.parameters()):
-    param_cur.data = torch.ones_like(param_cur.data)
-    param_best.data = torch.ones_like(param_best.data)
-
-    
-lstm_out_torch, lstm_state_torch = f_torch(a)
-lstm_out, lstm_state = f(a)
-assert torch.sum((lstm_out_torch!=lstm_out).float())==0
-assert torch.sum((lstm_state_torch[0]!=lstm_state[0]).float())==0
-assert torch.sum((lstm_state_torch[1]!=lstm_state[1]).float())==0
+a = torch.ones([64,37,10])
+TD = TD.train()
+ret = TD(a)
 '''

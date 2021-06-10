@@ -1,9 +1,7 @@
 """
 Created on Thu Jun 10 14:56:50 2021
-
 @author: Chao, Tzu-Yin
 """
-
 import torch
 import torch.nn as nn
 
