@@ -144,7 +144,7 @@ class tdvae(nn.Module):
     def forward(self, x, state=None):
         #x: sequence with shape of [B,C,S]
         #return value: list of zPBt1, zPTt1, the final state, loss
-        #NOTICE: tdvae has different performance under model.train() and model.eval().
+        #NOTICE: tdvae has different behavior under model.train() and model.eval().
         #Please check the paper for more detial.
         return self.reccursive_for_sampling(x, self.blocks, state)
 
