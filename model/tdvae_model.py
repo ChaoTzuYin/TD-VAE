@@ -6,7 +6,7 @@ Created on Thu Jun 10 14:56:50 2021
 
 import torch
 import torch.nn as nn
-from LSTM import LSTM
+from model.LSTM import LSTM
 
 class GateActivation(nn.Module):
     def __init__(self, dim):
@@ -141,6 +141,22 @@ class tdvae(nn.Module):
         
         return zt1_l_plus_n, zt2_l_plus_n, ret_state + [state_out], ret_loss + [vae_loss]
     
+    def rollout(self, x, rollout_steps=14):
+        _, zt_p1, _, _ = self.forward(x)
+        
+        z_step = [[item[...,-1:] for item in zt_p1]]
+        for step in range(rollout_steps-1):
+            z_layer = []
+            for layer in range(len(self.blocks)):
+                PTt1_inp = torch.cat([z_step[-1][layer]]+z_layer,1) #[B, C, T-1]
+                P_PTt1 = self.blocks[layer].PT(PTt1_inp)
+                z_layer += [P_PTt1.sample()]
+            z_step += [z_layer]
+        
+        change_order = torch.cat([torch.stack(item,0) for item in z_step],-1)
+        
+        return torch.unbind(change_order,0)
+        
     def forward(self, x, state=None):
         #x: sequence with shape of [B,C,S]
         #return value: list of zPBt1, zPTt1, the final state, loss
@@ -148,7 +164,7 @@ class tdvae(nn.Module):
         #Please check the paper for more detial.
         return self.reccursive_for_sampling(x, self.blocks, state)
 
-'''
+
 #Test reccursive#
 TD = tdvae(input_dim=37,
          belief_state_dim=64, 
@@ -160,4 +176,3 @@ TD = tdvae(input_dim=37,
 a = torch.ones([64,37,10])
 TD = TD.train()
 ret = TD(a)
-'''
