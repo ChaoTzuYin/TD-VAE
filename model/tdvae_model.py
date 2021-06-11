@@ -164,7 +164,7 @@ class tdvae(nn.Module):
         #Please check the paper for more detial.
         return self.reccursive_for_sampling(x, self.blocks, state)
 
-
+'''
 #Test reccursive#
 TD = tdvae(input_dim=37,
          belief_state_dim=64, 
@@ -176,3 +176,4 @@ TD = tdvae(input_dim=37,
 a = torch.ones([64,37,10])
 TD = TD.train()
 ret = TD(a)
+'''
