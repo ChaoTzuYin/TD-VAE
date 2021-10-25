@@ -6,15 +6,15 @@ As the sampling process in the multi-stochastic-layer version is extremely compl
 ![plot](./figures/TDVAE.PNG)
 # Result: The moving digist experiment
 <br/>
-<h>Ground truth</h>
+Ground truth
 <br/>
 ![plot](./figures/MD_gt.gif)
 <br/>
-<h>Single state predition</h>
+Single state predition
 <br/>
 ![plot](./figures/MD_S2S.gif)
 <br/>
-<h>Roll out (Recursive prediction)</h>
+Roll out (Recursive prediction)
 <br/>
 ![plot](./figures/MD_rollout.gif)
 
