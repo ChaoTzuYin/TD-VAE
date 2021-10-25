@@ -7,14 +7,17 @@ As the sampling process in the multi-stochastic-layer version is extremely compl
 # Result: The moving digist experiment
 <br/>
 Ground truth
-<br/>
-![plot](./figures/MD_gt.gif)
+<img src="./figures/MD_gt.gif" alt="Italian Trulli" 
+ width="400" 
+ height="200">
 <br/>
 Single state predition
-<br/>
-![plot](./figures/MD_S2S.gif)
+<img src="./figures/MD_S2S.gif" alt="Italian Trulli"
+ width="400" 
+ height="200"">
 <br/>
 Roll out (Recursive prediction)
-<br/>
-![plot](./figures/MD_rollout.gif)
+<img src="./figures/MD_rollout.gif" alt="Italian Trulli"
+ width="400" 
+ height="200">
 
