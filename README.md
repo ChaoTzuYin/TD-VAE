@@ -1,5 +1,5 @@
 # Temporal Difference Variational Auto-Encoder (TD-VAE)
-<br>- The code implements the framework proposed in <a href="https://arxiv.org/abs/1806.03107">Temporal Difference Variational Auto-Encoder (Gregor et al)</a>.<br/>
+<br>- This is an implementation of the framework proposed in <a href="https://arxiv.org/abs/1806.03107">Temporal Difference Variational Auto-Encoder (Gregor et al)</a>.<br/>
 <br>- The main purpose of this implementation is to make it a simple block that is easy to use as a plugin of the network.<br/>
 <br>- As the sampling process in the multi-stochastic-layer version is extremely complicated, I try the trick of recursive function call to simplify it.<br/>
 <br/>
