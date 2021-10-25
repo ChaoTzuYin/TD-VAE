@@ -5,6 +5,7 @@ As the sampling process in the multi-stochastic-layer version is extremely compl
 <br/>
 ![plot](./figures/TDVAE.PNG)
 # Result: The moving digist experiment
+<br>
 The task of moving digist is mainly to predict the next digist state after observing a sequence of moving digists. Dataset used in this experiment is as defined in "moving_mnist.py". Notice for the row 6 of "moving_mnist.py", before you use it, please make sure to either change the root path of mnist dataset according to your situation or to change the "download" flag into True. The results are as shown below.
 <br/>
 Ground truth
