@@ -1,6 +1,7 @@
 # Temporal Difference Variational Auto-Encoder (TD-VAE)
 <br>- This is a Pytorch implementation of <a href="https://arxiv.org/abs/1806.03107">Temporal Difference Variational Auto-Encoder (Gregor et al)</a>.<br/>
 <br>- The main purpose of this implementation is to make TD-VAE a simple block that can be easily plugin to the other networks.<br/>
+<br>- We also provide the (cuda mode) second-order gradient applicable LSTM module.<br/>
 <br/>
 ![plot](./figures/TDVAE.PNG)
 # Experiment Reproduction Result: The moving digist experiment
